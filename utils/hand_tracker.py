@@ -30,3 +30,14 @@ class HandTracker:
             return int(x_avg * self.screen_width)
 
         return None
+
+    def fingers_up(self, frame):
+        """Returns True if both index and middle fingers are up."""
+        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        results = self.hands.process(frame_rgb)
+        if not results.multi_hand_landmarks:
+            return None
+        lm = results.multi_hand_landmarks[0].landmark
+        index_up = lm[8].y < lm[6].y
+        middle_up = lm[12].y < lm[10].y
+        return index_up and middle_up
