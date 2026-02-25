@@ -1,5 +1,7 @@
 import pygame
 import cv2
+import random
+import math
 from pygame.math import Vector2
 from utils.hand_tracker import HandTracker
 
@@ -28,7 +30,7 @@ paddle_pos = float(paddle.centerx)
 ball = ball_img.get_rect()
 ball_pos = Vector2(WIDTH // 2, HEIGHT // 2)
 ball_speed = [5.0, -5.0]
-MAX_SPEED = 15.0      # lowered from 50
+MAX_SPEED = 12.0
 SPEED_INCREMENT = 0.5
 ball_attached = True
 
@@ -38,6 +40,7 @@ gap = 8
 start_x = (WIDTH - (COLS * brick_w + (COLS - 1) * gap)) // 2
 
 bricks = []
+
 def reset_bricks():
     bricks.clear()
     for r in range(ROWS):
@@ -48,6 +51,25 @@ def reset_bricks():
             bricks.append(rect)
 
 reset_bricks()
+
+# ---------- PARTICLES ----------
+particles = []
+shake_offset = Vector2(0, 0)
+shake_frames = 0
+
+def spawn_particles(pos):
+    global shake_offset, shake_frames
+    shake_frames = 5  # slight shake duration
+    for _ in range(20):  # more particles
+        angle = random.uniform(0, 2 * math.pi)
+        speed = random.uniform(2, 5)
+        particles.append({
+            'pos': Vector2(pos),
+            'vel': Vector2(speed * math.cos(angle), speed * math.sin(angle)),
+            'life': random.randint(25, 40),
+            'size': 2,  # smaller particles
+            'color': (0, 0, 0)
+        })
 
 # ---------- UI ----------
 score = 0
@@ -87,12 +109,11 @@ while running:
         if event.type == pygame.QUIT:
             running = False
 
-        # Toggle pause menu with ESC
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE and not show_menu and not game_over:
                 pause_menu = not pause_menu
 
-        # Main menu button clicks
+        # Main menu clicks
         if show_menu and event.type == pygame.MOUSEBUTTONDOWN:
             if start_btn.collidepoint(event.pos):
                 show_menu = False
@@ -123,7 +144,7 @@ while running:
                 ball_speed = [5.0, -5.0]
                 game_started = False
 
-        # Game over button clicks
+        # Game over clicks
         if game_over and event.type == pygame.MOUSEBUTTONDOWN:
             if replay_btn.collidepoint(event.pos):
                 show_menu = True
@@ -156,7 +177,7 @@ while running:
         draw_button("EXIT", exit_btn)
 
     else:
-        # ---------- ORIGINAL GAME CODE ----------
+        # ---------- GAME CODE ----------
         if not game_over:
             ret, frame = cap.read()
             if ret:
@@ -200,6 +221,7 @@ while running:
                             bricks.remove(brick)
                             ball_speed[1] *= -1
                             score += 10
+                            spawn_particles(brick.center)
                             for i in (0, 1):
                                 if abs(ball_speed[i]) < MAX_SPEED:
                                     ball_speed[i] += SPEED_INCREMENT * (1 if ball_speed[i] > 0 else -1)
@@ -215,36 +237,52 @@ while running:
             ball.topleft = ball_pos
 
         # ---------- DRAW GAME ----------
-        if not game_over:
-            for brick in bricks:
-                screen.blit(brick_img, brick)
-
-            screen.blit(paddle_img, paddle)
-            screen.blit(ball_img, ball)
-
-            screen.blit(score_bg, score_box.topleft)
-            screen.blit(font.render(f"Score: {score}", True, (0, 0, 0)),
-                        (score_box.x + 12, score_box.y + 9))
-
-            screen.blit(life_bg, life_box.topleft)
-            screen.blit(font.render(f"Lives: {lives}", True, (0, 0, 0)),
-                        (life_box.x + 12, life_box.y + 9))
-
-            # ---------- TEXT ZONE ----------
-            text_y = 300
-            if not game_started:
-                line1 = font.render("Move paddle using two fingers", True, (0, 0, 0))
-                line2 = font.render("Tap your fingers to launch the ball", True, (0, 0, 0))
-                screen.blit(line1, line1.get_rect(center=(WIDTH // 2, text_y)))
-                screen.blit(line2, line2.get_rect(center=(WIDTH // 2, text_y + 34)))
-            elif pause:
-                pause_text = font.render(
-                    "Hand not detected — show your hand to continue",
-                    True, (0, 0, 0)
-                )
-                screen.blit(pause_text, pause_text.get_rect(center=(WIDTH // 2, text_y)))
-
+        offset = (shake_offset.x, shake_offset.y)
+        if shake_frames > 0:
+            shake_offset.x = random.randint(-3, 3)
+            shake_offset.y = random.randint(-3, 3)
+            shake_frames -= 1
         else:
+            shake_offset = Vector2(0, 0)
+
+        for brick in bricks:
+            screen.blit(brick_img, brick.move(offset))
+
+        screen.blit(paddle_img, paddle.move(offset))
+        screen.blit(ball_img, ball.move(offset))
+
+        screen.blit(score_bg, score_box.topleft)
+        screen.blit(font.render(f"Score: {score}", True, (0, 0, 0)),
+                    (score_box.x + 12, score_box.y + 9))
+
+        screen.blit(life_bg, life_box.topleft)
+        screen.blit(font.render(f"Lives: {lives}", True, (0, 0, 0)),
+                    (life_box.x + 12, life_box.y + 9))
+
+        # ---------- TEXT ----------
+        text_y = 300
+        if not game_started:
+            line1 = font.render("Move paddle using two fingers", True, (0, 0, 0))
+            line2 = font.render("Tap your fingers to launch the ball", True, (0, 0, 0))
+            screen.blit(line1, line1.get_rect(center=(WIDTH // 2, text_y)))
+            screen.blit(line2, line2.get_rect(center=(WIDTH // 2, text_y + 34)))
+        elif pause:
+            pause_text = font.render(
+                "Hand not detected — show your hand to continue",
+                True, (0, 0, 0)
+            )
+            screen.blit(pause_text, pause_text.get_rect(center=(WIDTH // 2, text_y)))
+
+        # ---------- PARTICLES ----------
+        for p in particles[:]:
+            p['pos'] += p['vel']
+            p['life'] -= 1
+            pygame.draw.circle(screen, p['color'], (int(p['pos'].x)+offset[0], int(p['pos'].y)+offset[1]), p['size'])
+            if p['life'] <= 0:
+                particles.remove(p)
+
+        # ---------- GAME OVER ----------
+        if game_over:
             overlay = pygame.Surface((WIDTH, HEIGHT))
             overlay.set_alpha(235)
             overlay.fill((255, 255, 255))
